@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Comparative Study of ChatGPT's Prompts for Novice Arduino Makers</title>
+  <style>
+    body {
+      margin: 20px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    /* Collapsible wrapper */
+    details {
+      border: 1px solid #999;
+      border-radius: 6px;
+      padding: 8px 12px;
+      background: #fafafa;
+      margin-bottom: 16px;
+      transition: background 0.2s;
+    }
+
+    details[open] {
+      background: #fff;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      outline: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .caret {
+      border: 4px solid transparent;
+      border-left-color: #444;
+      transform: rotate(-90deg);
+      transition: transform 0.2s ease;
+    }
+
+    details[open] .caret {
+      transform: rotate(0deg);
+    }
+
+    /* Chat log styling */
+    .chat-log {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg {
+      padding: 8px 12px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .msg.user {
+      background: #e1f5fe;
+      align-self: flex-start;
+    }
+
+    .msg.assistant {
+      background: #e8f5e9;
+      align-self: flex-end;
+    }
+
+    .msg.system {
+      background: #f3e5f5;
+      align-self: flex-start;
+      font-style: italic;
+    }
+
+    .msg.tool {
+      display: none;
+    }
+
+    .raw-json {
+      background: #f5f5f5;
+      padding: 8px 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+  </style>
+</head>
+<body>
+<h1>Comparative Study of ChatGPT's Prompts for Novice Arduino Makers</h1>
+<p><em>This section presents the experimental chat logs from the study conducted by:</em><br>
+<b>Chacharin Lertyosbordin</b> (KMUTT), 
+<b>Thakorn Jearaborival</b> (Assumption College), 
+<b>Nattawat Panyapakdeewong</b> (Bangkok Christian College), and 
+<b>Natchanop Theprat</b> (Ratwinit Bangkaeo School).
+</p>
+<p>Click a heading to expand or collapse the corresponding prompt interaction logs.</p>
+
+<div id="promptContainer"></div>
+
+<script type="module">
+  // ===== CONFIG =====
+  const baseURL =
+    "https://raw.githubusercontent.com/chacharin/compare_chatGPT_arduino/main/";
+
+  const promptsMeta = [
+    { label: "Short:LED-Blink-Adjust", file: "ShortLED-Blink-Adjust.txt" },
+    { label: "Long:LED-Blink-Adjust", file: "LongLED-Blink-Adjust.txt" },
+    { label: "Short:Temp&Humid Monitor", file: "ShortTemp&Humid%20Monitor.txt" },
+    { label: "Long:Temp&Humid Monitor", file: "LongTemp&Humid%20Monitor.txt" },
+    { label: "Short:IR-Remote-Robot", file: "ShortIR-Remote-Robot.txt" },
+    { label: "Long:IR-Remort-Robot", file: "LongIR-Remort-Robot.txt" }
+  ];
+
+  document.addEventListener("DOMContentLoaded", loadPrompts);
+
+  async function loadPrompts() {
+    for (const meta of promptsMeta) {
+      const fullURL = baseURL + meta.file; // already URL‑encoded where needed
+      try {
+        const res = await fetch(fullURL, { mode: "cors" });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const txt = (await res.text()).trim();
+        createPromptCard(meta.label, txt);
+      } catch (err) {
+        createPromptCard(meta.label, `⚠️ Unable to load file: ${err.message}`);
+      }
+    }
+  }
+
+  function createPromptCard(label, rawContent) {
+    const container = document.getElementById("promptContainer");
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    summary.appendChild(caret);
+    summary.appendChild(document.createTextNode(" " + label));
+    details.appendChild(summary);
+
+    const chatHtml = tryRenderChat(rawContent);
+    if (chatHtml) {
+      details.insertAdjacentHTML("beforeend", chatHtml);
+    } else {
+      const pre = document.createElement("pre");
+      pre.className = "raw-json";
+      pre.textContent = rawContent;
+      details.appendChild(pre);
+    }
+
+    container.appendChild(details);
+  }
+
+  function tryRenderChat(text) {
+    let obj;
+    try {
+      obj = JSON.parse(text);
+    } catch (_e) {
+      return null; // not valid JSON
+    }
+    if (!obj?.mapping) return null;
+
+    const messages = Object.values(obj.mapping)
+      .map((n) => n.message)
+      .filter((m) => m?.author && m.content?.parts)
+      .sort((a, b) => (a.create_time || 0) - (b.create_time || 0));
+
+    if (!messages.length) return null;
+
+    const msgDivs = messages
+      .map((m) => {
+        const role = m.author.role || "unknown";
+        if (role === "tool") return ""; // hide tool messages
+        const content = Array.isArray(m.content.parts)
+          ? m.content.parts.join("\n\n")
+          : String(m.content);
+        return `<div class="msg ${role}"><strong>${capitalize(role)}:</strong> ${escapeHtml(
+          content
+        )}</div>`;
+      })
+      .join("");
+
+    return `<div class="chat-log">${msgDivs}</div>`;
+  }
+
+  const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  const escapeHtml = (str) =>
+    str.replace(/[&<>"']/g, (t) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[t]));
+</script>
+</body>
+</html>
